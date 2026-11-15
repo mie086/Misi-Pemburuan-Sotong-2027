@@ -72,8 +72,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     switchMainTab('tabung', false);
     await loadDataFromSupabase();
 
-    supabaseClient.auth.onAuthStateChange(async (event, session) => {
-        // Semak sama ada session wujud DAN user.id sepadan dengan UID Admin
+    let isSigningOutUnauthorized = false;
+
+    supabaseClient.auth.onAuthStateChange((event, session) => {
         const isAuthorizedAdmin = !!(session && session.user && ADMIN_UIDS.includes(session.user.id));
         isAdmin = isAuthorizedAdmin;
         updateAdminUI();
@@ -82,10 +83,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             startAutoLogoutTimer();
         } else {
             stopAutoLogoutTimer();
-            // Jika ada akaun bukan admin yang cuba log masuk, tamatkan sesi serta-merta
-            if (session) {
-                await supabaseClient.auth.signOut();
-                showErrorModal('Akses Ditolak', 'Akaun ini tidak mempunyai kebenaran Pentadbir Sistem.');
+            if (session && event !== 'SIGNED_OUT' && !isSigningOutUnauthorized) {
+                isSigningOutUnauthorized = true;
+                setTimeout(async () => {
+                    try {
+                        await supabaseClient.auth.signOut();
+                        showErrorModal('Akses Ditolak', 'Akaun ini tidak mempunyai kebenaran Pentadbir Sistem.');
+                    } finally {
+                        isSigningOutUnauthorized = false;
+                    }
+                }, 0);
             }
         }
     });
