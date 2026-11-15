@@ -1,7 +1,10 @@
-// #region 1. KONFIGURASI SUPABASE & STATE GLOBAL
+// #region 1. KONFIGURASI SUPABASE, UID ADMIN & STATE GLOBAL
 const SUPABASE_URL = 'https://twbmjojqyhmjsoywiqrs.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3Ym1qb2pxeWhtanNveXdpcXJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ5MzUyODUsImV4cCI6MjA4MDUxMTI4NX0._Q3peI3s04DuBHyHE3qUl-OzcagrbpWdP2-QIid3agY';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ISU A DISELESAIKAN: Senarai putih UID Admin sebenar
+const ADMIN_UIDS = ['bf2faada-2d44-4a16-a981-05649949ee60'];
 
 let isAdmin = false;
 let dynamicFixedTarget = 4750;
@@ -69,11 +72,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     switchMainTab('tabung', false);
     await loadDataFromSupabase();
 
-    supabaseClient.auth.onAuthStateChange((event, session) => {
-        isAdmin = !!session;
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        // Semak sama ada session wujud DAN user.id sepadan dengan UID Admin
+        const isAuthorizedAdmin = !!(session && session.user && ADMIN_UIDS.includes(session.user.id));
+        isAdmin = isAuthorizedAdmin;
         updateAdminUI();
-        if (isAdmin) startAutoLogoutTimer();
-        else stopAutoLogoutTimer();
+
+        if (isAdmin) {
+            startAutoLogoutTimer();
+        } else {
+            stopAutoLogoutTimer();
+            // Jika ada akaun bukan admin yang cuba log masuk, tamatkan sesi serta-merta
+            if (session) {
+                await supabaseClient.auth.signOut();
+                showErrorModal('Akses Ditolak', 'Akaun ini tidak mempunyai kebenaran Pentadbir Sistem.');
+            }
+        }
     });
 
     setupImageZoom();
@@ -88,10 +102,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 // #endregion
 
-// #region 2. UTILITI UMUM & PEMBANTU MODAL UNIVERSAL
+// #region 2. UTILITI KESELAMATAN (ALLOWLIST) & PEMBANTU MODAL UNIVERSAL
 function escapeHtml(text) {
     if (typeof text !== 'string') return text;
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+// ISU D DISELESAIKAN: Allowlist ketat untuk warna tema & kelas ikon FontAwesome
+const ALLOWED_COLORS = ['blue', 'emerald', 'amber', 'rose', 'orange', 'purple', 'red', 'indigo', 'teal'];
+const ALLOWED_ICON_REGEX = /^fa-[a-z0-9-]+$/;
+
+function getSafeColor(color, fallback = 'blue') {
+    return (typeof color === 'string' && ALLOWED_COLORS.includes(color.trim())) ? color.trim() : fallback;
+}
+
+function getSafeIcon(icon, fallback = 'fa-clock') {
+    return (typeof icon === 'string' && ALLOWED_ICON_REGEX.test(icon.trim())) ? icon.trim() : fallback;
 }
 
 function parseMYDate(dateStr) {
@@ -144,7 +170,6 @@ function toggleContactModal() {
     document.getElementById('adminContactModal').classList.toggle('hidden');
 }
 
-// Fungsi Universal Buka/Tutup sebarang Modal beranimasi
 function animateModal(modalId, show = true, shouldLockScroll = false) {
     const modal = document.getElementById(modalId);
     if (!modal) return;
@@ -171,7 +196,6 @@ function animateModal(modalId, show = true, shouldLockScroll = false) {
     }
 }
 
-// Fungsi Modal Makluman Dinamik (Menggantikan 7 modal berasingan)
 let alertAutoCloseTimer = null;
 function showSystemAlert(type, title, message, autoCloseMs = 0) {
     const iconWrap = document.getElementById('sysAlertIconWrap');
@@ -215,7 +239,6 @@ function showDatabaseErrorModal() { showSystemAlert('dbError', 'Ralat Sambungan 
 function openAfkLogoutModal() { showSystemAlert('afk', 'Sesi Tamat', 'Anda telah dilog keluar secara automatik kerana tidak aktif.'); }
 function showNoReceiptModal() { showSystemAlert('info', 'Dalam Proses...', 'Bukti pembayaran bagi transaksi ini akan dikemaskini oleh Admin.'); }
 
-// Fungsi Modal Pengesahan Padam (Confirmation)
 let pendingAction = null;
 function showConfirmationModal(message, actionCallback) {
     document.getElementById('confirmMessage').innerText = message;
@@ -263,7 +286,6 @@ function switchMainTab(tabName, shouldScroll = false) {
     if (activeBtn) { activeBtn.classList.remove('inactive-tab'); activeBtn.classList.add('active-tab'); }
     if (activeBottomBtn && selected.activeColor) activeBottomBtn.classList.add(selected.activeColor);
 
-    // Tatal semula jadi tanpa menambah sebarang ruang kosong di bawah
     if (shouldScroll && activeSection) {
         setTimeout(() => {
             const anchor = document.getElementById('mainTabsAnchor') || activeSection;
@@ -324,7 +346,7 @@ async function handleLogin(e) {
     btn.disabled = true;
     errorMsg.classList.add('hidden');
 
-    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
 
     if (error) {
         const attempts = parseInt(localStorage.getItem('loginAttempts') || '0') + 1;
@@ -335,6 +357,10 @@ async function handleLogin(e) {
         } else {
             errorMsg.innerHTML = `Salah. Tinggal <b>${MAX_ATTEMPTS - attempts}</b> kali percubaan lagi.`;
         }
+        errorMsg.classList.remove('hidden');
+    } else if (data && data.user && !ADMIN_UIDS.includes(data.user.id)) {
+        await supabaseClient.auth.signOut();
+        errorMsg.innerHTML = `Akaun ini bukan pentadbir yang sah.`;
         errorMsg.classList.remove('hidden');
     } else {
         localStorage.removeItem('loginAttempts');
@@ -452,7 +478,7 @@ function renderTable() {
         let colorIndex = 0;
 
         for (const [customType, customAmt] of Object.entries(lainLainTotals)) {
-            const theme = colors[colorIndex % colors.length];
+            const theme = getSafeColor(colors[colorIndex % colors.length], 'blue');
             lencanaTambahan += `<div class="text-[9px] font-bold text-${theme}-600 bg-${theme}-100 px-1.5 py-0.5 rounded mt-1 border border-${theme}-200 inline-block mr-1 mb-1">+${formatCurrency(customAmt)} ${escapeHtml(customType)}</div>`;
             colorIndex++;
         }
@@ -558,9 +584,9 @@ function renderMemberHistoryInModal(member) {
             const displayType = h.type ? `<span class="block text-[9px] text-gray-400 mt-0.5">${escapeHtml(h.type)}</span>` : '';
             container.innerHTML += `
                 <div class="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100 hover:bg-blue-50 transition">
-                    <div><span class="text-gray-600 font-mono">${h.date}</span>${displayType}</div>
+                    <div><span class="text-gray-600 font-mono">${escapeHtml(h.date)}</span>${displayType}</div>
                     <div class="flex items-center gap-2">
-                        <span class="font-bold text-emerald-600">RM${h.amount}</span>
+                        <span class="font-bold text-emerald-600">RM${escapeHtml(String(h.amount))}</span>
                         <button type="button" onclick="prepareEditHistoryItem(${member.id}, ${index})" class="text-blue-400 hover:text-blue-600 ml-2 bg-white p-1 rounded border border-blue-100 shadow-sm"><i class="fa-solid fa-pen-to-square"></i></button>
                         <button type="button" onclick="deletePaymentHistoryItem(${member.id}, ${index})" class="text-red-400 hover:text-red-600 bg-white p-1 rounded border border-red-100 shadow-sm"><i class="fa-solid fa-trash"></i></button>
                     </div>
@@ -841,7 +867,7 @@ function deleteExpense() {
 }
 // #endregion
 
-// #region 7. PENGURUSAN TENTATIF & CHECKLIST
+// #region 7. PENGURUSAN TENTATIF & CHECKLIST (DENGAN PENAPIS ALLOWLIST)
 function toggleTentative(element) {
     const content = element.nextElementSibling || element.parentElement.querySelector('.tentative-body');
     const icon = element.querySelector('.fa-chevron-down');
@@ -865,8 +891,8 @@ function renderTentative() {
         });
 
         const adminBtn = isAdmin ? `<button onclick="editTentative(${item.id})" class="ml-2 text-gray-300 hover:text-indigo-500 transition"><i class="fa-solid fa-pen-to-square"></i></button>` : '';
-        const safeColor = escapeHtml(item.color_theme || 'blue');
-        const safeIcon = escapeHtml(item.icon || 'fa-clock');
+        const safeColor = getSafeColor(item.color_theme, 'blue');
+        const safeIcon = getSafeIcon(item.icon, 'fa-clock');
 
         htmlContent += `
         <div class="flex gap-4 items-start relative mb-6">
@@ -932,8 +958,8 @@ function editTentative(id) {
     document.getElementById('tentTitle').value = t.title;
     document.getElementById('tentDetails').value = t.details || '';
     document.getElementById('tentSort').value = t.sort_order;
-    document.getElementById('tentColor').value = t.color_theme;
-    document.getElementById('tentIcon').value = t.icon;
+    document.getElementById('tentColor').value = getSafeColor(t.color_theme, 'blue');
+    document.getElementById('tentIcon').value = getSafeIcon(t.icon, 'fa-clock');
     document.getElementById('btnDeleteTent').classList.remove('hidden');
 }
 
@@ -945,8 +971,8 @@ async function submitTentative(e) {
         title: document.getElementById('tentTitle').value,
         details: document.getElementById('tentDetails').value,
         sort_order: parseInt(document.getElementById('tentSort').value) || 0,
-        color_theme: document.getElementById('tentColor').value,
-        icon: document.getElementById('tentIcon').value || 'fa-clock'
+        color_theme: getSafeColor(document.getElementById('tentColor').value, 'blue'),
+        icon: getSafeIcon(document.getElementById('tentIcon').value, 'fa-clock')
     };
     const { error } = id
         ? await supabaseClient.from('tentative').update(payload).eq('id', id)
@@ -983,7 +1009,9 @@ function renderChecklist() {
 
     let htmlContent = '';
     checklistList.forEach(cat => {
-        const adminBtn = isAdmin ? `<button onclick="editChecklist(${cat.id}); event.stopPropagation();" class="ml-2 text-gray-300 hover:text-${escapeHtml(cat.color_theme)}-500 transition"><i class="fa-solid fa-pen-to-square"></i></button>` : '';
+        const safeColor = getSafeColor(cat.color_theme, 'emerald');
+        const safeIcon = getSafeIcon(cat.icon, 'fa-list');
+        const adminBtn = isAdmin ? `<button onclick="editChecklist(${cat.id}); event.stopPropagation();" class="ml-2 text-gray-300 hover:text-${safeColor}-500 transition"><i class="fa-solid fa-pen-to-square"></i></button>` : '';
         let itemsHtml = '';
         if (cat.items) {
             cat.items.split('\n').forEach(line => {
@@ -1000,7 +1028,7 @@ function renderChecklist() {
         htmlContent += `
         <section>
             <header class="flex justify-between cursor-pointer font-bold text-sm text-gray-700" onclick="toggleChecklistCategory(this)">
-                <div><i class="fa-solid ${escapeHtml(cat.icon)} text-${escapeHtml(cat.color_theme)}-500 mr-2"></i> ${escapeHtml(cat.category)} ${adminBtn}</div>
+                <div><i class="fa-solid ${safeIcon} text-${safeColor}-500 mr-2"></i> ${escapeHtml(cat.category)} ${adminBtn}</div>
                 <i class="fa-solid fa-chevron-down text-gray-400 transition-transform duration-300"></i>
             </header>
             <div class="category-body mt-2 pl-6 space-y-2 hidden">${itemsHtml}</div>
@@ -1060,8 +1088,8 @@ function editChecklist(id) {
     document.getElementById('chkCategory').value = c.category;
     document.getElementById('chkItems').value = c.items || '';
     document.getElementById('chkSort').value = c.sort_order;
-    document.getElementById('chkColor').value = c.color_theme;
-    document.getElementById('chkIcon').value = c.icon;
+    document.getElementById('chkColor').value = getSafeColor(c.color_theme, 'emerald');
+    document.getElementById('chkIcon').value = getSafeIcon(c.icon, 'fa-list');
     document.getElementById('btnDeleteChk').classList.remove('hidden');
 }
 
@@ -1072,8 +1100,8 @@ async function submitChecklist(e) {
         category: document.getElementById('chkCategory').value,
         items: document.getElementById('chkItems').value,
         sort_order: parseInt(document.getElementById('chkSort').value) || 0,
-        color_theme: document.getElementById('chkColor').value,
-        icon: document.getElementById('chkIcon').value || 'fa-list'
+        color_theme: getSafeColor(document.getElementById('chkColor').value, 'emerald'),
+        icon: getSafeIcon(document.getElementById('chkIcon').value, 'fa-list')
     };
     const { error } = id
         ? await supabaseClient.from('checklist').update(payload).eq('id', id)
