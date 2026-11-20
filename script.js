@@ -791,7 +791,7 @@ function renderExpenses() {
         htmlContent += `
             <tr class="border-b border-gray-50 hover:bg-gray-50">
                 <td class="p-3 align-top text-gray-500 whitespace-nowrap">${escapeHtml(e.date)}</td>
-                <td class="p-3"><div class="font-bold text-gray-700 flex items-center">${escapeHtml(e.category)} ${adminAction}</div><div class="text-[10px] text-gray-400">&bull; ${escapeHtml(e.detail)}</div></td>
+                <td class="p-3 align-top"><div class="font-bold text-gray-700 flex items-center">${escapeHtml(e.category)} ${adminAction}</div><div class="text-[10px] text-gray-400">&bull; ${escapeHtml(e.detail)}</div></td>
                 <td class="p-3 text-right align-top"><div class="font-bold text-red-500">-${formatCurrency(e.amount)}</div>${receiptIcon}</td>
             </tr>`;
     });
