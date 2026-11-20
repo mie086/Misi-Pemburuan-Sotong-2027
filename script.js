@@ -69,6 +69,7 @@ async function loadDataFromSupabase() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    syncNavbarHeight();
     switchMainTab('tabung', false);
     await loadDataFromSupabase();
 
@@ -295,8 +296,9 @@ function switchMainTab(tabName, shouldScroll = false) {
 
     if (shouldScroll && activeSection) {
         setTimeout(() => {
+            const nav = document.querySelector('nav');
+            const yOffset = nav ? -(nav.offsetHeight + 4) : -98;
             const anchor = document.getElementById('mainTabsAnchor') || activeSection;
-            const yOffset = -76;
             const targetY = Math.max(0, anchor.getBoundingClientRect().top + window.scrollY + yOffset);
             
             window.scrollTo({ top: targetY, behavior: 'smooth' });
@@ -307,6 +309,15 @@ function switchMainTab(tabName, shouldScroll = false) {
         }, 20);
     }
 }
+
+function syncNavbarHeight() {
+    const nav = document.querySelector('nav');
+    if (nav) {
+        const navHeight = nav.offsetHeight;
+        document.documentElement.style.setProperty('--nav-height', `${navHeight}px`);
+    }
+}
+window.addEventListener('resize', syncNavbarHeight);
 
 function scrollToTopHome() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
